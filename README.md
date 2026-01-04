@@ -1,3 +1,5 @@
+### this is nk4dev modified version.
+
 ![](https://assets.vercel.com/image/upload/v1549723846/repositories/hyper/hyper-3-repo-banner.png)
 
 <p align="center">
@@ -6,7 +8,6 @@
   </a>
  </p>
   
-[![Node CI](https://github.com/vercel/hyper/workflows/Node%20CI/badge.svg?event=push)](https://github.com/vercel/hyper/actions?query=workflow%3A%22Node+CI%22+branch%3Acanary+event%3Apush)
 [![Changelog #213](https://img.shields.io/badge/changelog-%23213-lightgrey.svg)](https://changelog.com/213)
 
 For more details, head to: https://hyper.is
