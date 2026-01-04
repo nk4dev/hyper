@@ -1,27 +1,88 @@
-import {EventEmitter} from 'events';
-import {dirname} from 'path';
-import {StringDecoder} from 'string_decoder';
+import { EventEmitter } from "events";
+import { dirname } from "path";
+import { StringDecoder } from "string_decoder";
 
-import defaultShell from 'default-shell';
-import type {IPty, IWindowsPtyForkOptions, spawn as npSpawn} from 'node-pty';
-import osLocale from 'os-locale';
-import shellEnv from 'shell-env';
+// `default-shell` is ESM-only in newer versions and can't be required by
+// CommonJS at module load time. Use a synchronous environment-based
+// fallback so the main process doesn't crash when the module isn't
+// available or is ESM-only.
+const getDefaultShell = (): string => {
+  if (process.platform === "win32") {
+    return (process.env.COMSPEC as string) || "cmd.exe";
+  }
+  return process.env.SHELL || "/bin/sh";
+};
+import type { IPty, IWindowsPtyForkOptions, spawn as npSpawn } from "node-pty";
+/**
+ * `os-locale` is ESM-only in newer versions and can throw when `require`d at
+ * module load time. Provide a synchronous fallback that attempts to require
+ * `os-locale` lazily and falls back to environment variables if not available.
+ */
+const getOsLocaleSync = (): string => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require("os-locale");
+    // If the module provides a sync() function, use it.
+    if (mod && typeof mod.sync === "function") {
+      try {
+        const val = mod.sync();
+        if (val) return String(val);
+      } catch (e) {
+        // ignore and fall through to env fallback
+      }
+    }
+    // If `mod` itself is a function but async-only, we can't call it synchronously.
+  } catch (err) {
+    // require failed (likely because the package is ESM-only) — fall back below
+  }
 
-import * as config from './config';
-import {cliScriptPath} from './config/paths';
-import {productName, version} from './package.json';
-import {getDecoratedEnv} from './plugins';
-import {getFallBackShellConfig} from './utils/shell-fallback';
+  // Fallback: try common environment variables and normalize to the expected format (en_US)
+  const env =
+    process.env.LC_ALL ||
+    process.env.LC_MESSAGES ||
+    process.env.LANG ||
+    "en_US";
+  return String(env).split(".")[0].replace(/-/, "_");
+};
+/**
+ * `shell-env` may be ESM-only in newer versions and cannot be required at
+ * module load time. Provide a small sync helper that attempts to require
+ * `shell-env` lazily and falls back to the current process.env when not
+ * available.
+ */
+const shellEnvSync = (shell?: string) => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require("shell-env");
+    if (mod && typeof mod.sync === "function") {
+      try {
+        const env = mod.sync(shell);
+        if (env) return env;
+      } catch (e) {
+        // ignore and fall through to fallback
+      }
+    }
+  } catch (err) {
+    // require failed (likely because the package is ESM-only) — fall back below
+  }
+  return process.env;
+};
+
+import * as config from "./config";
+import { cliScriptPath } from "./config/paths";
+import { productName, version } from "./package.json";
+import { getDecoratedEnv } from "./plugins";
+import { getFallBackShellConfig } from "./utils/shell-fallback";
 
 const createNodePtyError = () =>
   new Error(
-    '`node-pty` failed to load. Typically this means that it was built incorrectly. Please check the `readme.md` to more info.'
+    "`node-pty` failed to load. Typically this means that it was built incorrectly. Please check the `readme.md` to more info.",
   );
 
 let spawn: typeof npSpawn;
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  spawn = require('node-pty').spawn;
+  spawn = require("node-pty").spawn;
 } catch (err) {
   throw createNodePtyError();
 }
@@ -48,7 +109,7 @@ class DataBatcher extends EventEmitter {
   constructor(uid: string) {
     super();
     this.uid = uid;
-    this.decoder = new StringDecoder('utf8');
+    this.decoder = new StringDecoder("utf8");
 
     this.reset();
   }
@@ -68,7 +129,7 @@ class DataBatcher extends EventEmitter {
       this.flush();
     }
 
-    this.data += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
+    this.data += typeof chunk === "string" ? chunk : this.decoder.write(chunk);
 
     if (!this.timeout) {
       this.timeout = setTimeout(() => this.flush(), BATCH_DURATION_MS);
@@ -80,7 +141,7 @@ class DataBatcher extends EventEmitter {
     const data = this.data;
     this.reset();
 
-    this.emit('flush', data);
+    this.emit("flush", data);
   }
 }
 
@@ -110,37 +171,54 @@ export default class Session extends EventEmitter {
     this.init(options);
   }
 
-  init({uid, rows, cols, cwd, shell: _shell, shellArgs: _shellArgs, profile}: SessionOptions) {
+  init({
+    uid,
+    rows,
+    cols,
+    cwd,
+    shell: _shell,
+    shellArgs: _shellArgs,
+    profile,
+  }: SessionOptions) {
     this.profile = profile;
     const envFromConfig = config.getProfileConfig(profile).env || {};
-    const defaultShellArgs = ['--login'];
+    const defaultShellArgs = ["--login"];
 
-    const shell = _shell || defaultShell;
+    const shell = _shell || getDefaultShell();
     const shellArgs = _shellArgs || defaultShellArgs;
 
     const cleanEnv =
-      process.env['APPIMAGE'] && process.env['APPDIR'] ? shellEnv.sync(_shell || defaultShell) : process.env;
+      process.env["APPIMAGE"] && process.env["APPDIR"]
+        ? shellEnvSync(shell)
+        : process.env;
     const baseEnv: Record<string, string> = {
       ...cleanEnv,
-      LANG: `${osLocale.sync().replace(/-/, '_')}.UTF-8`,
-      TERM: 'xterm-256color',
-      COLORTERM: 'truecolor',
+      LANG: `${getOsLocaleSync().replace(/-/, "_")}.UTF-8`,
+      TERM: "xterm-256color",
+      COLORTERM: "truecolor",
       TERM_PROGRAM: productName,
       TERM_PROGRAM_VERSION: version,
-      ...envFromConfig
+      ...envFromConfig,
     };
     // path to AppImage mount point is added to PATH environment variable automatically
     // which conflicts with the cli
-    if (baseEnv['APPIMAGE'] && baseEnv['APPDIR']) {
-      baseEnv['PATH'] = [dirname(cliScriptPath)]
-        .concat((baseEnv['PATH'] || '').split(':').filter((val) => !val.startsWith(baseEnv['APPDIR'])))
-        .join(':');
+    if (baseEnv["APPIMAGE"] && baseEnv["APPDIR"]) {
+      baseEnv["PATH"] = [dirname(cliScriptPath)]
+        .concat(
+          (baseEnv["PATH"] || "")
+            .split(":")
+            .filter((val) => !val.startsWith(baseEnv["APPDIR"])),
+        )
+        .join(":");
     }
 
     // Electron has a default value for process.env.GOOGLE_API_KEY
     // We don't want to leak this to the shell
     // See https://github.com/vercel/hyper/issues/696
-    if (baseEnv.GOOGLE_API_KEY && process.env.GOOGLE_API_KEY === baseEnv.GOOGLE_API_KEY) {
+    if (
+      baseEnv.GOOGLE_API_KEY &&
+      process.env.GOOGLE_API_KEY === baseEnv.GOOGLE_API_KEY
+    ) {
       delete baseEnv.GOOGLE_API_KEY;
     }
 
@@ -148,18 +226,18 @@ export default class Session extends EventEmitter {
       cols,
       rows,
       cwd,
-      env: getDecoratedEnv(baseEnv)
+      env: getDecoratedEnv(baseEnv),
     };
 
     // if config do not set the useConpty, it will be judged by the node-pty
-    if (typeof useConpty === 'boolean') {
+    if (typeof useConpty === "boolean") {
       options.useConpty = useConpty;
     }
 
     try {
       this.pty = spawn(shell, shellArgs, options);
     } catch (_err) {
-      const err = _err as {message: string};
+      const err = _err as { message: string };
       if (/is not a function/.test(err.message)) {
         throw createNodePtyError();
       } else {
@@ -175,8 +253,8 @@ export default class Session extends EventEmitter {
       this.batcher?.write(chunk);
     });
 
-    this.batcher.on('flush', (data: string) => {
-      this.emit('data', data);
+    this.batcher.on("flush", (data: string) => {
+      this.emit("data", data);
     });
 
     this.pty.onExit((e) => {
@@ -185,15 +263,20 @@ export default class Session extends EventEmitter {
         // this will inform users in case there are errors in the config instead of instant exit
         const runDuration = new Date().getTime() - this.initTimestamp;
         if (e.exitCode > 0 && runDuration < 1000) {
-          const fallBackShellConfig = getFallBackShellConfig(shell, shellArgs, defaultShell, defaultShellArgs);
+          const fallBackShellConfig = getFallBackShellConfig(
+            shell,
+            shellArgs,
+            getDefaultShell(),
+            defaultShellArgs,
+          );
           if (fallBackShellConfig) {
             const msg = `
 shell exited in ${runDuration} ms with exit code ${e.exitCode}
-please check the shell config: ${JSON.stringify({shell, shellArgs}, undefined, 2)}
+please check the shell config: ${JSON.stringify({ shell, shellArgs }, undefined, 2)}
 using fallback shell config: ${JSON.stringify(fallBackShellConfig, undefined, 2)}
 `;
             console.warn(msg);
-            this.batcher?.write(msg.replace(/\n/g, '\r\n'));
+            this.batcher?.write(msg.replace(/\n/g, "\r\n"));
             this.init({
               uid,
               rows,
@@ -201,7 +284,7 @@ using fallback shell config: ${JSON.stringify(fallBackShellConfig, undefined, 2)
               cwd,
               shell: fallBackShellConfig.shell,
               shellArgs: fallBackShellConfig.shellArgs,
-              profile
+              profile,
             });
           } else {
             const msg = `
@@ -209,11 +292,11 @@ shell exited in ${runDuration} ms with exit code ${e.exitCode}
 No fallback available, please check the shell config.
 `;
             console.warn(msg);
-            this.batcher?.write(msg.replace(/\n/g, '\r\n'));
+            this.batcher?.write(msg.replace(/\n/g, "\r\n"));
           }
         } else {
           this.ended = true;
-          this.emit('exit');
+          this.emit("exit");
         }
       }
     });
@@ -229,20 +312,20 @@ No fallback available, please check the shell config.
     if (this.pty) {
       this.pty.write(data);
     } else {
-      console.warn('Warning: Attempted to write to a session with no pty');
+      console.warn("Warning: Attempted to write to a session with no pty");
     }
   }
 
-  resize({cols, rows}: {cols: number; rows: number}) {
+  resize({ cols, rows }: { cols: number; rows: number }) {
     if (this.pty) {
       try {
         this.pty.resize(cols, rows);
       } catch (_err) {
-        const err = _err as {stack: any};
+        const err = _err as { stack: any };
         console.error(err.stack);
       }
     } else {
-      console.warn('Warning: Attempted to resize a session with no pty');
+      console.warn("Warning: Attempted to resize a session with no pty");
     }
   }
 
@@ -251,13 +334,13 @@ No fallback available, please check the shell config.
       try {
         this.pty.kill();
       } catch (_err) {
-        const err = _err as {stack: any};
-        console.error('exit error', err.stack);
+        const err = _err as { stack: any };
+        console.error("exit error", err.stack);
       }
     } else {
-      console.warn('Warning: Attempted to destroy a session with no pty');
+      console.warn("Warning: Attempted to destroy a session with no pty");
     }
-    this.emit('exit');
+    this.emit("exit");
     this.ended = true;
   }
 }

@@ -1,26 +1,58 @@
 // Packages
-import electron, {app} from 'electron';
-import type {BrowserWindow, AutoUpdater} from 'electron';
+import electron, { app } from "electron";
+import type { BrowserWindow, AutoUpdater } from "electron";
 
-import retry from 'async-retry';
-import ms from 'ms';
+/**
+ * `async-retry` might not be available/hoisted when running from `target/`.
+ * Try to require it lazily and fall back to a minimal retry implementation
+ * that approximate exponential backoff behavior.
+ */
+let retry: (fn: () => any, opts?: any) => Promise<any>;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const retryMod = require("async-retry");
+  retry = (fn: any, opts?: any) => retryMod(fn, opts);
+} catch (err) {
+  // Minimal synchronous/async-compatible fallback
+  retry = async (fn: () => any, opts?: any) => {
+    const retries = opts && typeof opts.retries === "number" ? opts.retries : 3;
+    const minTimeout =
+      opts && typeof opts.minTimeout === "number" ? opts.minTimeout : 100;
+    let lastErr: any;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = fn();
+        // Support both sync and async return values
+        return res && typeof res.then === "function" ? await res : res;
+      } catch (e) {
+        lastErr = e;
+        if (attempt === retries) throw lastErr;
+        const delay = minTimeout * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  };
+}
+import ms from "ms";
 
 // Utilities
-import autoUpdaterLinux from './auto-updater-linux';
-import {getDefaultProfile} from './config';
-import {version} from './package.json';
-import {getDecoratedConfig} from './plugins';
+import autoUpdaterLinux from "./auto-updater-linux";
+import { getDefaultProfile } from "./config";
+import { version } from "./package.json";
+import { getDecoratedConfig } from "./plugins";
 
-const {platform} = process;
-const isLinux = platform === 'linux';
+const { platform } = process;
+const isLinux = platform === "linux";
 
-const autoUpdater: AutoUpdater = isLinux ? autoUpdaterLinux : electron.autoUpdater;
+const autoUpdater: AutoUpdater = isLinux
+  ? autoUpdaterLinux
+  : electron.autoUpdater;
 
 const getDecoratedConfigWithRetry = async () => {
   return await retry(() => {
     const content = getDecoratedConfig(getDefaultProfile());
     if (!content) {
-      throw new Error('No config content loaded');
+      throw new Error("No config content loaded");
     }
     return content;
   });
@@ -38,16 +70,19 @@ let isInit = false;
 let canaryUpdates = false;
 
 const buildFeedUrl = (canary: boolean, currentVersion: string) => {
-  const updatePrefix = canary ? 'releases-canary' : 'releases';
-  const archSuffix = process.arch === 'arm64' || app.runningUnderARM64Translation ? '_arm64' : '';
-  return `https://${updatePrefix}.hyper.is/update/${isLinux ? 'deb' : platform}${archSuffix}/${currentVersion}`;
+  const updatePrefix = canary ? "releases-canary" : "releases";
+  const archSuffix =
+    process.arch === "arm64" || app.runningUnderARM64Translation
+      ? "_arm64"
+      : "";
+  return `https://${updatePrefix}.hyper.is/update/${isLinux ? "deb" : platform}${archSuffix}/${currentVersion}`;
 };
 
-const isCanary = (updateChannel: string) => updateChannel === 'canary';
+const isCanary = (updateChannel: string) => updateChannel === "canary";
 
 async function init() {
-  autoUpdater.on('error', (err) => {
-    console.error('Error fetching updates', `${err.message} (${err.stack})`);
+  autoUpdater.on("error", (err) => {
+    console.error("Error fetching updates", `${err.message} (${err.stack})`);
   });
 
   const config = await getDecoratedConfigWithRetry();
@@ -59,15 +94,15 @@ async function init() {
 
   const feedURL = buildFeedUrl(canaryUpdates, version);
 
-  autoUpdater.setFeedURL({url: feedURL});
+  autoUpdater.setFeedURL({ url: feedURL });
 
   setTimeout(() => {
     void checkForUpdates();
-  }, ms('10s'));
+  }, ms("10s"));
 
   setInterval(() => {
     void checkForUpdates();
-  }, ms('30m'));
+  }, ms("30m"));
 
   isInit = true;
 }
@@ -77,42 +112,55 @@ const updater = (win: BrowserWindow) => {
     void init();
   }
 
-  const {rpc} = win;
+  const { rpc } = win;
 
-  const onupdate = (ev: Event, releaseNotes: string, releaseName: string, date: Date, updateUrl: string) => {
-    const releaseUrl = updateUrl || `https://github.com/vercel/hyper/releases/tag/${releaseName}`;
-    rpc.emit('update available', {releaseNotes, releaseName, releaseUrl, canInstall: !isLinux});
+  const onupdate = (
+    ev: Event,
+    releaseNotes: string,
+    releaseName: string,
+    date: Date,
+    updateUrl: string,
+  ) => {
+    const releaseUrl =
+      updateUrl ||
+      `https://github.com/vercel/hyper/releases/tag/${releaseName}`;
+    rpc.emit("update available", {
+      releaseNotes,
+      releaseName,
+      releaseUrl,
+      canInstall: !isLinux,
+    });
   };
 
   if (isLinux) {
-    autoUpdater.on('update-available', onupdate);
+    autoUpdater.on("update-available", onupdate);
   } else {
-    autoUpdater.on('update-downloaded', onupdate);
+    autoUpdater.on("update-downloaded", onupdate);
   }
 
-  rpc.once('quit and install', () => {
+  rpc.once("quit and install", () => {
     autoUpdater.quitAndInstall();
   });
 
   app.config.subscribe(async () => {
-    const {updateChannel} = await getDecoratedConfigWithRetry();
+    const { updateChannel } = await getDecoratedConfigWithRetry();
     const newUpdateIsCanary = isCanary(updateChannel);
 
     if (newUpdateIsCanary !== canaryUpdates) {
       const feedURL = buildFeedUrl(newUpdateIsCanary, version);
 
-      autoUpdater.setFeedURL({url: feedURL});
+      autoUpdater.setFeedURL({ url: feedURL });
       void checkForUpdates();
 
       canaryUpdates = newUpdateIsCanary;
     }
   });
 
-  win.on('close', () => {
+  win.on("close", () => {
     if (isLinux) {
-      autoUpdater.removeListener('update-available', onupdate);
+      autoUpdater.removeListener("update-available", onupdate);
     } else {
-      autoUpdater.removeListener('update-downloaded', onupdate);
+      autoUpdater.removeListener("update-downloaded", onupdate);
     }
   });
 };

@@ -1,20 +1,20 @@
-import cp from 'child_process';
+import cp from "child_process";
 
-import ms from 'ms';
-import queue from 'queue';
+import ms from "ms";
+import simpleQueue from "../utils/simple-queue";
 
-import {yarn, plugs} from '../config/paths';
+import { yarn, plugs } from "../config/paths";
 
 export const install = (fn: (err: string | null) => void) => {
-  const spawnQueue = queue({concurrency: 1});
+  const spawnQueue = simpleQueue({ concurrency: 1 });
   function yarnFn(args: string[], cb: (err: string | null) => void) {
     const env = {
-      NODE_ENV: 'production',
-      ELECTRON_RUN_AS_NODE: 'true'
+      NODE_ENV: "production",
+      ELECTRON_RUN_AS_NODE: "true",
     };
-    spawnQueue.push((end) => {
-      const cmd = [process.execPath, yarn].concat(args).join(' ');
-      console.log('Launching yarn:', cmd);
+    spawnQueue.push((end: (() => void) | undefined) => {
+      const cmd = [process.execPath, yarn].concat(args).join(" ");
+      console.log("Launching yarn:", cmd);
 
       cp.execFile(
         process.execPath,
@@ -22,8 +22,8 @@ export const install = (fn: (err: string | null) => void) => {
         {
           cwd: plugs.base,
           env,
-          timeout: ms('5m'),
-          maxBuffer: 1024 * 1024
+          timeout: ms("5m"),
+          maxBuffer: 1024 * 1024,
         },
         (err, stdout, stderr) => {
           if (err) {
@@ -33,17 +33,20 @@ export const install = (fn: (err: string | null) => void) => {
           }
           end?.();
           spawnQueue.start();
-        }
+        },
       );
     });
 
     spawnQueue.start();
   }
 
-  yarnFn(['install', '--no-emoji', '--no-lockfile', '--cache-folder', plugs.cache], (err) => {
-    if (err) {
-      return fn(err);
-    }
-    fn(null);
-  });
+  yarnFn(
+    ["install", "--no-emoji", "--no-lockfile", "--cache-folder", plugs.cache],
+    (err) => {
+      if (err) {
+        return fn(err);
+      }
+      fn(null);
+    },
+  );
 };

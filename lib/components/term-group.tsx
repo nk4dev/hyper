@@ -1,19 +1,27 @@
-import React from 'react';
+import React from "react";
 
-import {connect} from 'react-redux';
+import { connect } from "react-redux";
 
-import type {HyperState, HyperDispatch, TermGroupProps, TermGroupOwnProps} from '../../typings/hyper';
-import {resizeTermGroup} from '../actions/term-groups';
-import {decorate, getTermProps, getTermGroupProps} from '../utils/plugins';
+import type {
+  HyperState,
+  HyperDispatch,
+  TermGroupProps,
+  TermGroupOwnProps,
+} from "../../typings/hyper";
+import { resizeTermGroup } from "../actions/term-groups";
+import { decorate, getTermProps, getTermGroupProps } from "../utils/plugins";
 
-import SplitPane_ from './split-pane';
-import Term_ from './term';
+import SplitPane_ from "./split-pane";
+import Term_ from "./term";
 
-const Term = decorate(Term_, 'Term');
-const SplitPane = decorate(SplitPane_, 'SplitPane');
+const Term = decorate(Term_, "Term");
+const SplitPane = decorate(SplitPane_, "SplitPane");
 
 class TermGroup_ extends React.PureComponent<TermGroupProps> {
-  bound: WeakMap<(uid: string, ...args: any[]) => any, Record<string, (...args: any[]) => any>>;
+  bound: WeakMap<
+    (uid: string, ...args: any[]) => any,
+    Record<string, (...args: any[]) => any>
+  >;
   term?: Term_ | null;
   constructor(props: TermGroupProps, context: any) {
     super(props, context);
@@ -23,8 +31,10 @@ class TermGroup_ extends React.PureComponent<TermGroupProps> {
   bind<T extends (uid: string, ...args: any[]) => any>(
     fn: T,
     thisObj: any,
-    uid: string
-  ): (...args: T extends (uid: string, ..._args: infer I) => any ? I : never) => ReturnType<T> {
+    uid: string,
+  ): (
+    ...args: T extends (uid: string, ..._args: infer I) => any ? I : never
+  ) => ReturnType<T> {
     if (!this.bound.has(fn)) {
       this.bound.set(fn, {});
     }
@@ -41,7 +51,9 @@ class TermGroup_ extends React.PureComponent<TermGroupProps> {
       return first;
     }
 
-    const direction = this.props.termGroup.direction!.toLowerCase() as 'horizontal' | 'vertical';
+    const direction = this.props.termGroup.direction!.toLowerCase() as
+      | "horizontal"
+      | "vertical";
     return (
       <SplitPane
         direction={direction}
@@ -110,7 +122,7 @@ class TermGroup_ extends React.PureComponent<TermGroupProps> {
       screenReaderMode: this.props.screenReaderMode,
       windowsPty: this.props.windowsPty,
       imageSupport: this.props.imageSupport,
-      uid
+      uid,
     });
 
     // This will create a new ref_ function for every render,
@@ -120,7 +132,7 @@ class TermGroup_ extends React.PureComponent<TermGroupProps> {
   }
 
   render() {
-    const {childGroups, termGroup} = this.props;
+    const { childGroups, termGroup } = this.props;
     if (termGroup.sessionUid) {
       return this.renderTerm(termGroup.sessionUid);
     }
@@ -129,7 +141,7 @@ class TermGroup_ extends React.PureComponent<TermGroupProps> {
       const props = getTermGroupProps(
         child.uid,
         this.props.parentProps,
-        Object.assign({}, this.props, {termGroup: child})
+        Object.assign({}, this.props, { termGroup: child }),
       );
 
       return <DecoratedTermGroup key={child.uid} {...props} />;
@@ -140,19 +152,27 @@ class TermGroup_ extends React.PureComponent<TermGroupProps> {
 }
 
 const mapStateToProps = (state: HyperState, ownProps: TermGroupOwnProps) => ({
-  childGroups: ownProps.termGroup.children.map((uid) => state.termGroups.termGroups[uid])
+  childGroups: ownProps.termGroup.children.map(
+    (uid) => state.termGroups.termGroups[uid],
+  ),
 });
 
-const mapDispatchToProps = (dispatch: HyperDispatch, ownProps: TermGroupOwnProps) => ({
+const mapDispatchToProps = (
+  dispatch: HyperDispatch,
+  ownProps: TermGroupOwnProps,
+) => ({
   onTermGroupResize(splitSizes: number[]) {
     dispatch(resizeTermGroup(ownProps.termGroup.uid, splitSizes));
-  }
+  },
 });
 
-const TermGroup = connect(mapStateToProps, mapDispatchToProps, null, {forwardRef: true})(TermGroup_);
+const TermGroup = connect(mapStateToProps, mapDispatchToProps, null, {
+  forwardRef: true,
+})(TermGroup_);
 
-const DecoratedTermGroup = decorate(TermGroup, 'TermGroup');
+const DecoratedTermGroup = decorate(TermGroup, "TermGroup");
 
 export default TermGroup;
 
-export type TermGroupConnectedProps = ReturnType<typeof mapStateToProps> & ReturnType<typeof mapDispatchToProps>;
+export type TermGroupConnectedProps = ReturnType<typeof mapStateToProps> &
+  ReturnType<typeof mapDispatchToProps>;

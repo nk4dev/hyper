@@ -1,7 +1,7 @@
 import {dirname, resolve} from 'path';
 
 import {builders, namedTypes} from 'ast-types';
-import type {ExpressionKind} from 'ast-types/lib/gen/kinds';
+import type {ExpressionKind} from 'ast-types/gen/kinds';
 import {copy, copySync, existsSync, readFileSync, writeFileSync} from 'fs-extra';
 import merge from 'lodash/merge';
 import {parse, prettyPrint} from 'recast';

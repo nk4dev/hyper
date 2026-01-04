@@ -4,6 +4,7 @@
     "checkJs": false,
     "composite": true,
     "esModuleInterop": true,
+    "skipLibCheck": true,
     "jsx": "react",
     "module": "commonjs",
     "moduleResolution": "node",

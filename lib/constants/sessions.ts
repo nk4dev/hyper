@@ -19,9 +19,9 @@ export interface SessionAddAction {
   uid: string;
   shell: string | null;
   pid: number | null;
+  profile?: string;
   cols: number | null;
   rows: number | null;
-  profile?: string;
   splitDirection?: "HORIZONTAL" | "VERTICAL";
   activeUid: string | null;
   now: number;
@@ -64,15 +64,10 @@ export interface SessionClearActiveAction {
 export interface SessionUserDataAction {
   type: typeof SESSION_USER_DATA;
 }
-
 export interface SessionUrlSetAction {
   type: typeof SESSION_URL_SET;
-
   uid: string;
-
-  url: string;
 }
-
 export interface SessionUrlUnsetAction {
   type: typeof SESSION_URL_UNSET;
   uid: string;

@@ -1,57 +1,57 @@
-import {clipboard, shell} from 'electron';
-import React from 'react';
+/* eslint @typescript-eslint/no-unsafe-call: 0 */
+import React from "react";
+import { Terminal, ITerminalOptions, IDisposable } from "xterm";
+import { FitAddon } from "xterm-addon-fit";
+import { WebLinksAddon } from "xterm-addon-web-links";
+import { SearchAddon } from "xterm-addon-search";
+import { WebglAddon } from "xterm-addon-webgl";
+import { LigaturesAddon } from "xterm-addon-ligatures";
+import { Unicode11Addon } from "xterm-addon-unicode11";
+import { clipboard /*, shell */ } from "electron";
+import * as remote from "@electron/remote";
+import Color from "color";
+import terms from "../terms";
+import processClipboard from "../utils/paste";
+import SearchBox from "./searchBox";
+import type { TermProps } from "../../typings/hyper";
+import { ObjectTypedKeys } from "../utils/object";
 
-import Color from 'color';
-import isEqual from 'lodash/isEqual';
-import pickBy from 'lodash/pickBy';
-import {Terminal} from 'xterm';
-import type {ITerminalOptions, IDisposable} from 'xterm';
-import {CanvasAddon} from 'xterm-addon-canvas';
-import {FitAddon} from 'xterm-addon-fit';
-import {ImageAddon} from 'xterm-addon-image';
-import {LigaturesAddon} from 'xterm-addon-ligatures';
-import {SearchAddon} from 'xterm-addon-search';
-import type {ISearchDecorationOptions} from 'xterm-addon-search';
-import {Unicode11Addon} from 'xterm-addon-unicode11';
-import {WebLinksAddon} from 'xterm-addon-web-links';
-import {WebglAddon} from 'xterm-addon-webgl';
+declare const store: any;
 
-import type {TermProps} from '../../typings/hyper';
-import terms from '../terms';
-import processClipboard from '../utils/paste';
-import {decorate} from '../utils/plugins';
-
-import _SearchBox from './searchBox';
-
-import 'xterm/css/xterm.css';
-
-const SearchBox = decorate(_SearchBox, 'SearchBox');
-
-const isWindows = ['Windows', 'Win16', 'Win32', 'WinCE'].includes(navigator.platform) || process.platform === 'win32';
+const isWindows = ["Windows", "Win16", "Win32", "WinCE"].includes(
+  navigator.platform,
+);
 
 // map old hterm constants to xterm.js
 const CURSOR_STYLES = {
-  BEAM: 'bar',
-  UNDERLINE: 'underline',
-  BLOCK: 'block'
+  BEAM: "bar",
+  UNDERLINE: "underline",
+  BLOCK: "block",
 } as const;
 
 const isWebgl2Supported = (() => {
   let isSupported = window.WebGL2RenderingContext ? undefined : false;
   return () => {
     if (isSupported === undefined) {
-      const canvas = document.createElement('canvas');
-      const gl = canvas.getContext('webgl2', {depth: false, antialias: false});
+      const canvas = document.createElement("canvas");
+      const gl = canvas.getContext("webgl2", {
+        depth: false,
+        antialias: false,
+      });
       isSupported = gl instanceof window.WebGL2RenderingContext;
     }
     return isSupported;
   };
 })();
 
-const getTermOptions = (props: TermProps): ITerminalOptions => {
+const getTermOptions = (
+  props: TermProps,
+): ITerminalOptions & { bellStyle?: "sound" | "none" } => {
   // Set a background color only if it is opaque
   const needTransparency = Color(props.backgroundColor).alpha() < 1;
-  const backgroundColor = needTransparency ? 'rgba(0,0,0,0)' : props.backgroundColor;
+  const backgroundColor = needTransparency
+    ? "transparent"
+    : props.backgroundColor;
 
   return {
     macOptionIsMeta: props.modifierKeys.altIsMeta,
@@ -65,15 +65,15 @@ const getTermOptions = (props: TermProps): ITerminalOptions => {
     lineHeight: props.lineHeight,
     letterSpacing: props.letterSpacing,
     allowTransparency: needTransparency,
-    macOptionClickForcesSelection: props.macOptionSelectionMode === 'force',
+    macOptionClickForcesSelection: props.macOptionSelectionMode === "force",
+    bellStyle: props.bell === "SOUND" ? "sound" : "none",
     windowsMode: isWindows,
-    ...(isWindows && props.windowsPty && {windowsPty: props.windowsPty}),
     theme: {
       foreground: props.foregroundColor,
       background: backgroundColor,
       cursor: props.cursorColor,
       cursorAccent: props.cursorAccentColor,
-      selectionBackground: props.selectionColor,
+      selection: props.selectionColor,
       black: props.colors.black,
       red: props.colors.red,
       green: props.colors.green,
@@ -89,52 +89,25 @@ const getTermOptions = (props: TermProps): ITerminalOptions => {
       brightBlue: props.colors.lightBlue,
       brightMagenta: props.colors.lightMagenta,
       brightCyan: props.colors.lightCyan,
-      brightWhite: props.colors.lightWhite
-    },
+      brightWhite: props.colors.lightWhite,
+    } as any,
     screenReaderMode: props.screenReaderMode,
-    overviewRulerWidth: 20,
-    allowProposedApi: true
   };
 };
 
-export default class Term extends React.PureComponent<
-  TermProps,
-  {
-    searchOptions: {
-      caseSensitive: boolean;
-      wholeWord: boolean;
-      regex: boolean;
-    };
-    searchResults:
-      | {
-          resultIndex: number;
-          resultCount: number;
-        }
-      | undefined;
-  }
-> {
+export default class Term extends React.PureComponent<TermProps> {
   termRef: HTMLElement | null;
   termWrapperRef: HTMLElement | null;
   termOptions: ITerminalOptions;
   disposableListeners: IDisposable[];
-  defaultBellSound: HTMLAudioElement | null;
-  bellSound: HTMLAudioElement | null;
+  termDefaultBellSound: string | null;
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
   static rendererTypes: Record<string, string>;
   term!: Terminal;
   resizeObserver!: ResizeObserver;
   resizeTimeout!: NodeJS.Timeout;
-  searchDecorations: ISearchDecorationOptions;
-  state = {
-    searchOptions: {
-      caseSensitive: false,
-      wholeWord: false,
-      regex: false
-    },
-    searchResults: undefined
-  };
-
+  webViewRef: any | null;
   constructor(props: TermProps) {
     super(props);
     props.ref_(props.uid, this);
@@ -142,17 +115,9 @@ export default class Term extends React.PureComponent<
     this.termWrapperRef = null;
     this.termOptions = {};
     this.disposableListeners = [];
-    this.defaultBellSound = null;
-    this.bellSound = null;
+    this.termDefaultBellSound = null;
     this.fitAddon = new FitAddon();
     this.searchAddon = new SearchAddon();
-    this.searchDecorations = {
-      activeMatchColorOverviewRuler: Color(this.props.cursorColor).hex(),
-      matchOverviewRuler: Color(this.props.borderColor).hex(),
-      activeMatchBackground: Color(this.props.cursorColor).hex(),
-      activeMatchBorder: Color(this.props.cursorColor).hex(),
-      matchBorder: Color(this.props.cursorColor).hex()
-    };
   }
 
   // The main process shows this in the About dialog
@@ -161,30 +126,40 @@ export default class Term extends React.PureComponent<
     if (rendererTypes[uid] !== type) {
       rendererTypes[uid] = type;
       Term.rendererTypes = rendererTypes;
-      window.rpc.emit('info renderer', {uid, type});
+      window.rpc.emit("info renderer", { uid, type });
     }
   }
 
   componentDidMount() {
-    const {props} = this;
+    const { props } = this;
 
     this.termOptions = getTermOptions(props);
     this.term = props.term || new Terminal(this.termOptions);
-    this.defaultBellSound = new Audio(
-      // Source: https://freesound.org/people/altemark/sounds/45759/
-      // This sound is released under the Creative Commons Attribution 3.0 Unported
-      // (CC BY 3.0) license. It was created by 'altemark'. No modifications have been
-      // made, apart from the conversion to base64.
-      'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjMyLjEwNAAAAAAAAAAAAAAA//tQxAADB8AhSmxhIIEVCSiJrDCQBTcu3UrAIwUdkRgQbFAZC1CQEwTJ9mjRvBA4UOLD8nKVOWfh+UlK3z/177OXrfOdKl7pyn3Xf//WreyTRUoAWgBgkOAGbZHBgG1OF6zM82DWbZaUmMBptgQhGjsyYqc9ae9XFz280948NMBWInljyzsNRFLPWdnZGWrddDsjK1unuSrVN9jJsK8KuQtQCtMBjCEtImISdNKJOopIpBFpNSMbIHCSRpRR5iakjTiyzLhchUUBwCgyKiweBv/7UsQbg8isVNoMPMjAAAA0gAAABEVFGmgqK////9bP/6XCykxBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
-    );
-    this.setBellSound(props.bell, props.bellSound);
+    let bell: string | null = null;
+    const getOptionFn = (this.term as any).getOption;
+    if (typeof getOptionFn === "function") {
+      try {
+        bell = getOptionFn.call(this.term, "bellSound");
+      } catch (err) {
+        // ignore and fallback to .options below
+        bell = null;
+      }
+    } else if (
+      (this.term as any).options &&
+      "bellSound" in (this.term as any).options
+    ) {
+      bell = (this.term as any).options.bellSound;
+    }
+    this.termDefaultBellSound = bell;
 
     // The parent element for the terminal is attached and removed manually so
     // that we can preserve it across mounts and unmounts of the component
-    this.termRef = props.term ? props.term.element!.parentElement! : document.createElement('div');
-    this.termRef.className = 'term_fit term_term';
+    this.termRef = props.term
+      ? props.term.element!.parentElement!
+      : document.createElement("div");
+    this.termRef!.className = "term_fit term_term";
 
-    this.termWrapperRef?.appendChild(this.termRef);
+    this.termWrapperRef?.appendChild(this.termRef!);
 
     if (!props.term) {
       const needTransparency = Color(props.backgroundColor).alpha() < 1;
@@ -192,22 +167,30 @@ export default class Term extends React.PureComponent<
       if (props.webGLRenderer) {
         if (needTransparency) {
           console.warn(
-            'WebGL Renderer has been disabled since it does not support transparent backgrounds yet. ' +
-              'Falling back to canvas-based rendering.'
+            "WebGL Renderer has been disabled since it does not support transparent backgrounds yet. " +
+              "Falling back to canvas-based rendering.",
           );
         } else if (!isWebgl2Supported()) {
-          console.warn('WebGL2 is not supported on your machine. Falling back to canvas-based rendering.');
+          console.warn(
+            "WebGL2 is not supported on your machine. Falling back to canvas-based rendering.",
+          );
         } else {
           // Experimental WebGL renderer needs some more glue-code to make it work on Hyper.
           // If you're working on enabling back WebGL, you will also need to look into `xterm-addon-ligatures` support for that renderer.
           useWebGL = true;
         }
       }
-      Term.reportRenderer(props.uid, useWebGL ? 'WebGL' : 'Canvas');
+      Term.reportRenderer(props.uid, useWebGL ? "WebGL" : "Canvas");
 
-      const shallActivateWebLink = (event: MouseEvent): boolean => {
-        if (!event) return false;
-        return props.webLinksActivationKey ? event[`${props.webLinksActivationKey}Key`] : true;
+      const shallActivateWebLink = (
+        event: Record<string, any> | undefined,
+      ): boolean => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        return (
+          event &&
+          (!props.webLinksActivationKey ||
+            event[`${props.webLinksActivationKey}Key`])
+        );
       };
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
@@ -215,44 +198,38 @@ export default class Term extends React.PureComponent<
       this.term.loadAddon(this.fitAddon);
       this.term.loadAddon(this.searchAddon);
       this.term.loadAddon(
-        new WebLinksAddon((event, uri) => {
-          if (shallActivateWebLink(event)) void shell.openExternal(uri);
-        })
+        new WebLinksAddon(
+          (event: MouseEvent | undefined, uri: string) => {
+            // if (shallActivateWebLink(event)) void shell.openExternal(uri);
+            store.dispatch({
+              type: "SESSION_URL_SET",
+              uid: props.uid,
+              url: uri,
+            });
+          },
+          {
+            // prevent default electron link handling to allow selection, e.g. via double-click
+            willLinkActivate: (event: MouseEvent | undefined) => {
+              event?.preventDefault();
+              return shallActivateWebLink(event);
+            },
+            priority: Date.now(),
+          } as any,
+        ),
       );
-      this.term.open(this.termRef);
-
+      this.term.open(this.termRef!);
       if (useWebGL) {
-        const webglAddon = new WebglAddon();
-        this.term.loadAddon(webglAddon);
-        webglAddon.onContextLoss(() => {
-          console.warn('WebGL context lost. Falling back to canvas-based rendering.');
-          webglAddon.dispose();
-          this.term.loadAddon(new CanvasAddon());
-        });
-      } else {
-        this.term.loadAddon(new CanvasAddon());
+        this.term.loadAddon(new WebglAddon());
       }
-
       if (props.disableLigatures !== true && !useWebGL) {
         this.term.loadAddon(new LigaturesAddon());
       }
-
       this.term.loadAddon(new Unicode11Addon());
-      this.term.unicode.activeVersion = '11';
-
-      if (props.imageSupport) {
-        this.term.loadAddon(new ImageAddon());
-      }
+      this.term.unicode.activeVersion = "11";
     } else {
       // get the cached plugins
       this.fitAddon = props.fitAddon!;
       this.searchAddon = props.searchAddon!;
-    }
-
-    try {
-      this.term.element!.style.padding = props.padding;
-    } catch (error) {
-      console.log(error);
     }
 
     this.fitAddon.fit();
@@ -266,9 +243,10 @@ export default class Term extends React.PureComponent<
     }
 
     if (props.onActive) {
-      this.term.textarea?.addEventListener('focus', props.onActive);
+      this.term.textarea?.addEventListener("focus", props.onActive);
       this.disposableListeners.push({
-        dispose: () => this.term.textarea?.removeEventListener('focus', this.props.onActive)
+        dispose: () =>
+          this.term.textarea?.removeEventListener("focus", this.props.onActive),
       });
     }
 
@@ -276,15 +254,11 @@ export default class Term extends React.PureComponent<
       this.disposableListeners.push(this.term.onData(props.onData));
     }
 
-    this.term.onBell(() => {
-      this.ringBell();
-    });
-
     if (props.onResize) {
       this.disposableListeners.push(
-        this.term.onResize(({cols, rows}) => {
+        this.term.onResize(({ cols, rows }) => {
           props.onResize(cols, rows);
-        })
+        }),
       );
 
       // the row and col of init session is null, so reize the node-pty
@@ -295,29 +269,28 @@ export default class Term extends React.PureComponent<
       this.disposableListeners.push(
         this.term.onCursorMove(() => {
           const cursorFrame = {
-            x: this.term.buffer.active.cursorX * (this.term as any)._core._renderService.dimensions.actualCellWidth,
-            y: this.term.buffer.active.cursorY * (this.term as any)._core._renderService.dimensions.actualCellHeight,
-            width: (this.term as any)._core._renderService.dimensions.actualCellWidth,
-            height: (this.term as any)._core._renderService.dimensions.actualCellHeight,
+            x:
+              this.term.buffer.active.cursorX *
+              (this.term as any)._core._renderService.dimensions
+                .actualCellWidth,
+            y:
+              this.term.buffer.active.cursorY *
+              (this.term as any)._core._renderService.dimensions
+                .actualCellHeight,
+            width: (this.term as any)._core._renderService.dimensions
+              .actualCellWidth,
+            height: (this.term as any)._core._renderService.dimensions
+              .actualCellHeight,
             col: this.term.buffer.active.cursorX,
-            row: this.term.buffer.active.cursorY
+            row: this.term.buffer.active.cursorY,
           };
           props.onCursorMove?.(cursorFrame);
-        })
+        }),
       );
     }
 
-    this.disposableListeners.push(
-      this.searchAddon.onDidChangeResults((results) => {
-        this.setState((state) => ({
-          ...state,
-          searchResults: results
-        }));
-      })
-    );
-
-    window.addEventListener('paste', this.onWindowPaste, {
-      capture: true
+    window.addEventListener("paste", this.onWindowPaste, {
+      capture: true,
     });
 
     terms[this.props.uid] = this;
@@ -325,11 +298,11 @@ export default class Term extends React.PureComponent<
 
   getTermDocument() {
     console.warn(
-      'The underlying terminal engine of Hyper no longer ' +
-        'uses iframes with individual `document` objects for each ' +
-        'terminal instance. This method call is retained for ' +
+      "The underlying terminal engine of Hyper no longer " +
+        "uses iframes with individual `document` objects for each " +
+        "terminal instance. This method call is retained for " +
         "backwards compatibility reasons. It's ok to attach directly" +
-        'to the `document` object of the main `window`.'
+        "to the `document` object of the main `window`.",
     );
     return document;
   }
@@ -353,7 +326,7 @@ export default class Term extends React.PureComponent<
         clipboard.writeText(this.term.getSelection());
         this.term.clearSelection();
       } else {
-        document.execCommand('paste');
+        document.execCommand("paste");
       }
     } else if (this.props.copyOnSelect && this.term.hasSelection()) {
       clipboard.writeText(this.term.getSelection());
@@ -364,9 +337,9 @@ export default class Term extends React.PureComponent<
     this.term.write(data);
   }
 
-  focus = () => {
+  focus() {
     this.term.focus();
-  };
+  }
 
   clear() {
     this.term.clear();
@@ -376,28 +349,20 @@ export default class Term extends React.PureComponent<
     this.term.reset();
   }
 
+  search = (searchTerm = "") => {
+    this.searchAddon.findNext(searchTerm);
+  };
+
   searchNext = (searchTerm: string) => {
-    this.searchAddon.findNext(searchTerm, {
-      ...this.state.searchOptions,
-      decorations: this.searchDecorations
-    });
+    this.searchAddon.findNext(searchTerm);
   };
 
   searchPrevious = (searchTerm: string) => {
-    this.searchAddon.findPrevious(searchTerm, {
-      ...this.state.searchOptions,
-      decorations: this.searchDecorations
-    });
+    this.searchAddon.findPrevious(searchTerm);
   };
 
   closeSearchBox = () => {
     this.props.onCloseSearch();
-    this.searchAddon.clearDecorations();
-    this.searchAddon.clearActiveDecoration();
-    this.setState((state) => ({
-      ...state,
-      searchResults: undefined
-    }));
     this.term.focus();
   };
 
@@ -421,18 +386,6 @@ export default class Term extends React.PureComponent<
     return !e.catched;
   }
 
-  setBellSound(bell: 'SOUND' | false, sound: string | null) {
-    if (bell && bell.toUpperCase() === 'SOUND') {
-      this.bellSound = sound ? new Audio(sound) : this.defaultBellSound;
-    } else {
-      this.bellSound = null;
-    }
-  }
-
-  ringBell() {
-    void this.bellSound?.play();
-  }
-
   componentDidUpdate(prevProps: TermProps) {
     if (!prevProps.cleared && this.props.cleared) {
       this.clear();
@@ -440,27 +393,54 @@ export default class Term extends React.PureComponent<
 
     const nextTermOptions = getTermOptions(this.props);
 
-    if (prevProps.bell !== this.props.bell || prevProps.bellSound !== this.props.bellSound) {
-      this.setBellSound(this.props.bell, this.props.bellSound);
-    }
+    // Use bellSound in nextProps if it exists
+    // otherwise use the default sound found in xterm.
+    (nextTermOptions as any).bellSound =
+      this.props.bellSound || this.termDefaultBellSound!;
 
-    if (prevProps.search && !this.props.search) {
-      this.closeSearchBox();
+    if (!prevProps.search && this.props.search) {
+      this.search();
     }
 
     // Update only options that have changed.
-    this.term.options = pickBy(
-      nextTermOptions,
-      (value, key) => !isEqual(this.termOptions[key as keyof ITerminalOptions], value)
-    );
+    ObjectTypedKeys(nextTermOptions)
+      .filter(
+        (option) =>
+          option !== "theme" &&
+          (nextTermOptions as any)[option] !==
+            (this.termOptions as any)[option],
+      )
+      .forEach((option) => {
+        try {
+          (this.term as any).setOption(option, nextTermOptions[option]);
+        } catch (_e) {
+          const e = _e as { message: string };
+          if (
+            /The webgl renderer only works with the webgl char atlas/i.test(
+              e.message,
+            )
+          ) {
+            // Ignore this because the char atlas will also be changed
+          } else {
+            throw e;
+          }
+        }
+      });
+
+    // Do we need to update theme?
+    const shouldUpdateTheme =
+      !this.termOptions.theme ||
+      (nextTermOptions as any).rendererType !==
+        (this.termOptions as any).rendererType ||
+      ObjectTypedKeys(nextTermOptions.theme!).some(
+        (option) =>
+          nextTermOptions.theme![option] !== this.termOptions.theme![option],
+      );
+    if (shouldUpdateTheme) {
+      (this.term as any).setOption("theme", nextTermOptions.theme);
+    }
 
     this.termOptions = nextTermOptions;
-
-    try {
-      this.term.element!.style.padding = this.props.padding;
-    } catch (error) {
-      console.log(error);
-    }
 
     if (
       this.props.fontSize !== prevProps.fontSize ||
@@ -472,7 +452,10 @@ export default class Term extends React.PureComponent<
       this.fitResize();
     }
 
-    if (prevProps.rows !== this.props.rows || prevProps.cols !== this.props.cols) {
+    if (
+      prevProps.rows !== this.props.rows ||
+      prevProps.cols !== this.props.cols
+    ) {
       this.resize(this.props.cols!, this.props.rows!);
     }
   }
@@ -495,7 +478,17 @@ export default class Term extends React.PureComponent<
 
   componentWillUnmount() {
     terms[this.props.uid] = null;
-    this.termWrapperRef?.removeChild(this.termRef!);
+    try {
+      if (
+        this.termWrapperRef &&
+        this.termRef &&
+        this.termRef.parentNode === this.termWrapperRef
+      ) {
+        this.termWrapperRef.removeChild(this.termRef);
+      }
+    } catch (err) {
+      console.warn("Failed to remove termRef child:", err);
+    }
     this.props.ref_(this.props.uid, null);
 
     // to clean up the terminal, we remove the listeners
@@ -505,51 +498,86 @@ export default class Term extends React.PureComponent<
     this.disposableListeners.forEach((handler) => handler.dispose());
     this.disposableListeners = [];
 
-    window.removeEventListener('paste', this.onWindowPaste, {
-      capture: true
+    window.removeEventListener("paste", this.onWindowPaste, {
+      capture: true,
     });
   }
 
+  setWebViewRef = (webView: any) => {
+    const oldRef = this.webViewRef;
+    this.webViewRef = webView;
+
+    if (!oldRef && webView) {
+      setTimeout(() => {
+        const wc = remote.webContents.fromId(webView.getWebContentsId());
+        wc.setIgnoreMenuShortcuts(true);
+        wc.on("before-input-event", (_event, input) => {
+          if (input.type === "keyDown") {
+            if (input.key === "r" && input.meta) {
+              webView.reload();
+            } else if (input.key === "=" && input.meta) {
+              wc.setZoomLevel(wc.getZoomLevel() + 1);
+            } else if (input.key === "-" && input.meta) {
+              wc.setZoomLevel(wc.getZoomLevel() - 1);
+            }
+          }
+        });
+      }, 10);
+    }
+  };
+
   render() {
     return (
-      <div className={`term_fit ${this.props.isTermActive ? 'term_active' : ''}`} onMouseUp={this.onMouseUp}>
-        {this.props.customChildrenBefore}
-        <div ref={this.onTermWrapperRef} className="term_fit term_wrapper" />
-        {this.props.customChildren}
-        {this.props.search ? (
-          <SearchBox
-            next={this.searchNext}
-            prev={this.searchPrevious}
-            close={this.closeSearchBox}
-            caseSensitive={this.state.searchOptions.caseSensitive}
-            wholeWord={this.state.searchOptions.wholeWord}
-            regex={this.state.searchOptions.regex}
-            results={this.state.searchResults}
-            toggleCaseSensitive={() =>
-              this.setState({
-                ...this.state,
-                searchOptions: {...this.state.searchOptions, caseSensitive: !this.state.searchOptions.caseSensitive}
-              })
-            }
-            toggleWholeWord={() =>
-              this.setState({
-                ...this.state,
-                searchOptions: {...this.state.searchOptions, wholeWord: !this.state.searchOptions.wholeWord}
-              })
-            }
-            toggleRegex={() =>
-              this.setState({
-                ...this.state,
-                searchOptions: {...this.state.searchOptions, regex: !this.state.searchOptions.regex}
-              })
-            }
-            selectionColor={this.props.selectionColor}
-            backgroundColor={this.props.backgroundColor}
-            foregroundColor={this.props.foregroundColor}
-            borderColor={this.props.borderColor}
-            font={this.props.uiFontFamily}
+      <div
+        className={`term_fit ${this.props.isTermActive ? "term_active" : ""}`}
+        style={{ padding: this.props.padding }}
+        onMouseUp={this.onMouseUp}
+      >
+        {(this.props as any).url ? (
+          <webview
+            ref={this.setWebViewRef}
+            src={(this.props as any).url}
+            style={{
+              background: "#fff",
+              position: "absolute",
+              top: 0,
+              left: 0,
+              display: "inline-flex",
+              width: "100%",
+              height: "100%",
+            }}
           />
-        ) : null}
+        ) : (
+          <>
+            {this.props.customChildrenBefore}
+            <div
+              ref={this.onTermWrapperRef}
+              className="term_fit term_wrapper"
+            />
+            {this.props.customChildren}
+            {this.props.search ? (
+              <SearchBox
+                caseSensitive={false}
+                wholeWord={false}
+                regex={false}
+                results={undefined}
+                toggleCaseSensitive={() => {}}
+                toggleWholeWord={() => {}}
+                toggleRegex={() => {}}
+                next={this.searchNext}
+                prev={this.searchPrevious}
+                close={this.closeSearchBox}
+                backgroundColor={this.props.backgroundColor}
+                foregroundColor={this.props.foregroundColor}
+                borderColor={this.props.borderColor}
+                selectionColor={this.props.selectionColor}
+                font={this.props.uiFontFamily}
+              />
+            ) : (
+              ""
+            )}
+          </>
+        )}
 
         <style jsx global>{`
           .term_fit {

@@ -1,4 +1,4 @@
-import Immutable from 'seamless-immutable';
+import Immutable from "seamless-immutable";
 
 import {
   SESSION_ADD,
@@ -10,70 +10,79 @@ import {
   SESSION_RESIZE,
   SESSION_SET_XTERM_TITLE,
   SESSION_SET_CWD,
-  SESSION_SEARCH
-} from '../../typings/constants/sessions';
-import type {sessionState, session, Mutable, ISessionReducer} from '../../typings/hyper';
-import {decorateSessionsReducer} from '../utils/plugins';
+  SESSION_SEARCH,
+  SESSION_URL_SET,
+} from "../../typings/constants/sessions";
+import type {
+  sessionState,
+  session,
+  Mutable,
+  ISessionReducer,
+} from "../../typings/hyper";
+import { decorateSessionsReducer } from "../utils/plugins";
 
 const initialState: sessionState = Immutable<Mutable<sessionState>>({
   sessions: {},
-  activeUid: null
+  activeUid: null,
 });
 
 function Session(obj: Immutable.DeepPartial<session>) {
   const x: session = {
-    uid: '',
-    title: '',
+    uid: "",
+    title: "",
     cols: null,
     rows: null,
     cleared: false,
     search: false,
-    shell: '',
+    shell: "",
     pid: null,
-    profile: ''
+    profile: "",
   };
   return Immutable(x).merge(obj);
 }
 
 function deleteSession(state: sessionState, uid: string) {
-  return state.updateIn(['sessions'], (sessions: (typeof state)['sessions']) => {
-    const sessions_ = sessions.asMutable();
-    delete sessions_[uid];
-    return sessions_;
-  });
+  return state.updateIn(
+    ["sessions"],
+    (sessions: (typeof state)["sessions"]) => {
+      const sessions_ = sessions.asMutable();
+      delete sessions_[uid];
+      return sessions_;
+    },
+  );
 }
 
 const reducer: ISessionReducer = (state = initialState, action) => {
   switch (action.type) {
     case SESSION_ADD:
-      return state.set('activeUid', action.uid).setIn(
-        ['sessions', action.uid],
+      return state.set("activeUid", action.uid).setIn(
+        ["sessions", action.uid],
         Session({
           cols: action.cols,
           rows: action.rows,
           uid: action.uid,
-          shell: action.shell ? action.shell.split('/').pop() : null,
+          shell: action.shell ? action.shell.split("/").pop() : null,
           pid: action.pid,
-          profile: action.profile
-        })
+          profile: action.profile,
+        }),
       );
 
     case SESSION_SET_ACTIVE:
-      return state.set('activeUid', action.uid);
+      return state.set("activeUid", action.uid);
 
     case SESSION_SEARCH:
-      return state.setIn(['sessions', action.uid, 'search'], action.value);
+      return state.setIn(["sessions", action.uid, "search"], action.value);
 
     case SESSION_CLEAR_ACTIVE:
       return state.merge(
         {
           sessions: {
             [state.activeUid!]: {
-              cleared: true
-            }
-          }
+              cleared: true,
+            },
+          },
         },
-        {deep: true}
+        { deep: true },
       );
 
     case SESSION_PTY_DATA:
@@ -84,11 +93,11 @@ const reducer: ISessionReducer = (state = initialState, action) => {
           {
             sessions: {
               [action.uid]: {
-                cleared: false
-              }
-            }
+                cleared: false,
+              },
+            },
           },
-          {deep: true}
+          { deep: true },
         );
       }
       return state;
@@ -97,7 +106,7 @@ const reducer: ISessionReducer = (state = initialState, action) => {
       if (state.sessions[action.uid]) {
         return deleteSession(state, action.uid);
       }
-      console.log('ignore pty exit: session removed by user');
+      console.log("ignore pty exit: session removed by user");
       return state;
 
     case SESSION_USER_EXIT:
@@ -105,27 +114,31 @@ const reducer: ISessionReducer = (state = initialState, action) => {
 
     case SESSION_SET_XTERM_TITLE:
       return state.setIn(
-        ['sessions', action.uid, 'title'],
+        ["sessions", action.uid, "title"],
         // we need to trim the title because `cmd.exe`
         // likes to report ' ' as the title
-        action.title.trim()
+        action.title.trim(),
       );
 
     case SESSION_RESIZE:
       return state.setIn(
-        ['sessions', action.uid],
+        ["sessions", action.uid],
         state.sessions[action.uid].merge({
           rows: action.rows,
           cols: action.cols,
-          resizeAt: action.now
-        })
+          resizeAt: action.now,
+        }),
       );
 
     case SESSION_SET_CWD:
       if (state.activeUid) {
-        return state.setIn(['sessions', state.activeUid, 'cwd'], action.cwd);
+        return state.setIn(["sessions", state.activeUid, "cwd"], action.cwd);
       }
+
       return state;
+
+    case SESSION_URL_SET:
+      return state.setIn(["sessions", action.uid, "url"], action.url);
 
     default:
       return state;

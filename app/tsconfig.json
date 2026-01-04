@@ -3,12 +3,15 @@
   "compilerOptions": {
     "declarationDir": "../dist/tmp/appdts/",
     "outDir": "../target/",
-    "noImplicitAny": false
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
   },
   "include": [
     "./**/*",
     "./package.json",
     "../typings/extend-electron.d.ts",
-    "../typings/ext-modules.d.ts"
-  ]
+    "../typings/ext-modules.d.ts",
+  ],
 }
