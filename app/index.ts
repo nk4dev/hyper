@@ -2,7 +2,6 @@ import { cfgPath } from "./config/paths";
 
 // Print diagnostic information for a few arguments instead of running Hyper.
 if (["--help", "-v", "--version"].includes(process.argv[1])) {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { version } = require("./package");
   console.log(`Hyper version ${version}`);
   console.log(
@@ -13,12 +12,12 @@ if (["--help", "-v", "--version"].includes(process.argv[1])) {
 }
 
 // Enable remote module
-// eslint-disable-next-line import/order
+
 import { initialize as remoteInitialize } from "@electron/remote/main";
 remoteInitialize();
 
 // set up config
-// eslint-disable-next-line import/order
+
 import * as config from "./config";
 config.setup();
 
@@ -101,7 +100,6 @@ async function installDevExtensions(isDev_: boolean) {
   //);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-misused-promises
 app.on("ready", () =>
   installDevExtensions(isDev)
     .then(() => {

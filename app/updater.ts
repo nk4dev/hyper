@@ -9,7 +9,6 @@ import type { BrowserWindow, AutoUpdater } from "electron";
  */
 let retry: (fn: () => any, opts?: any) => Promise<any>;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const retryMod = require("async-retry");
   retry = (fn: any, opts?: any) => retryMod(fn, opts);
 } catch (err) {

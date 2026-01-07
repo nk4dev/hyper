@@ -1,13 +1,7 @@
-// eslint-disable-next-line eslint-comments/disable-enable-pair
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-import test from 'ava';
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const proxyquire = require('proxyquire').noCallThru();
-
-test('positionIsValid() returns true when window is on only screen', (t) => {
+test("positionIsValid() returns true when window is on only screen", (t) => {
+  const proxyquire = require("proxyquire").noCallThru();
   const position = [50, 50];
-  const windowUtils = proxyquire('../../app/utils/window-utils', {
+  const windowUtils = proxyquire("../../app/utils/window-utils", {
     electron: {
       screen: {
         getAllDisplays: () => {
@@ -17,13 +11,13 @@ test('positionIsValid() returns true when window is on only screen', (t) => {
                 x: 0,
                 y: 0,
                 width: 500,
-                height: 500
-              }
-            }
+                height: 500,
+              },
+            },
           ];
-        }
-      }
-    }
+        },
+      },
+    },
   });
 
   const result = windowUtils.positionIsValid(position);
@@ -31,9 +25,10 @@ test('positionIsValid() returns true when window is on only screen', (t) => {
   t.true(result);
 });
 
-test('positionIsValid() returns true when window is on second screen', (t) => {
+test("positionIsValid() returns true when window is on second screen", (t) => {
+  const proxyquire = require("proxyquire").noCallThru();
   const position = [750, 50];
-  const windowUtils = proxyquire('../../app/utils/window-utils', {
+  const windowUtils = proxyquire("../../app/utils/window-utils", {
     electron: {
       screen: {
         getAllDisplays: () => {
@@ -43,21 +38,21 @@ test('positionIsValid() returns true when window is on second screen', (t) => {
                 x: 0,
                 y: 0,
                 width: 500,
-                height: 500
-              }
+                height: 500,
+              },
             },
             {
               workArea: {
                 x: 500,
                 y: 0,
                 width: 500,
-                height: 500
-              }
-            }
+                height: 500,
+              },
+            },
           ];
-        }
-      }
-    }
+        },
+      },
+    },
   });
 
   const result = windowUtils.positionIsValid(position);
@@ -65,28 +60,31 @@ test('positionIsValid() returns true when window is on second screen', (t) => {
   t.true(result);
 });
 
-test('positionIsValid() returns false when position isnt valid', (t) => {
+test("positionIsValid() returns false when position isnt valid", (t) => {
   const primaryDisplay = {
     workArea: {
       x: 0,
       y: 0,
       width: 500,
-      height: 500
-    }
+      height: 500,
+    },
   };
+  const proxyquire = require("proxyquire").noCallThru();
   const position = [600, 50];
-  const windowUtils = proxyquire('../../app/utils/window-utils', {
+  const windowUtils = proxyquire("../../app/utils/window-utils", {
     electron: {
       screen: {
         getAllDisplays: () => {
           return [primaryDisplay];
         },
-        getPrimaryDisplay: () => primaryDisplay
-      }
-    }
+        getPrimaryDisplay: () => primaryDisplay,
+      },
+    },
   });
 
   const result = windowUtils.positionIsValid(position);
 
   t.false(result);
 });
+
+export {};

@@ -23,7 +23,6 @@ const getSudoExec = ():
   | ((cmd: string, options: any) => Promise<any>)
   | null => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const sudoPrompt = require("sudo-prompt");
     return promisify(sudoPrompt.exec) as (
       cmd: string,

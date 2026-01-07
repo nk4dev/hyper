@@ -12,105 +12,108 @@
  * the API needed by this project (`get`, `set`, `delete`, `clear`).
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { dirname, join } from 'path'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { dirname, join } from "path";
 
-type StoreData = Record<string, any>
+type StoreData = Record<string, any>;
 
 export interface SimpleStoreOptions {
-  defaults?: StoreData
-  name?: string // filename base (defaults to 'config')
-  filePath?: string // explicit path to store file
+  defaults?: StoreData;
+  name?: string; // filename base (defaults to 'config')
+  filePath?: string; // explicit path to store file
 }
 
 /** Helper to safely obtain userData path even if `electron` isn't available in the runtime */
 function getDefaultUserPath(): string {
   try {
     // require here to avoid import-time issues in non-electron environments
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const electronApp = require('electron')?.app
-    if (electronApp && typeof electronApp.getPath === 'function') {
-      return electronApp.getPath('userData')
+    const electronApp = require("electron")?.app;
+    if (electronApp && typeof electronApp.getPath === "function") {
+      return electronApp.getPath("userData");
     }
   } catch (err) {
     // ignore - fallthrough to process cwd
   }
-  return process.cwd()
+  return process.cwd();
 }
 
 export default class SimpleStore {
-  private file: string
-  private data: StoreData
+  private file: string;
+  private data: StoreData;
 
   constructor(opts?: SimpleStoreOptions) {
-    const defaults = opts?.defaults ?? {}
-    const name = opts?.name ?? 'config'
-    const filePath = opts?.filePath ?? join(getDefaultUserPath(), `${name}.json`)
+    const defaults = opts?.defaults ?? {};
+    const name = opts?.name ?? "config";
+    const filePath =
+      opts?.filePath ?? join(getDefaultUserPath(), `${name}.json`);
 
-    this.file = filePath
-    this.data = {}
+    this.file = filePath;
+    this.data = {};
 
     try {
-      mkdirSync(dirname(this.file), { recursive: true })
+      mkdirSync(dirname(this.file), { recursive: true });
     } catch (err) {
       // ignore
     }
 
     if (existsSync(this.file)) {
       try {
-        const raw = readFileSync(this.file, { encoding: 'utf8' })
-        this.data = raw ? JSON.parse(raw) : {}
+        const raw = readFileSync(this.file, { encoding: "utf8" });
+        this.data = raw ? JSON.parse(raw) : {};
       } catch (err) {
         // If parsing fails, start from empty object
-        this.data = {}
+        this.data = {};
       }
     } else {
-      this.data = {}
+      this.data = {};
     }
 
     // Merge defaults into data (shallow) so defaults exist when missing
-    this.data = Object.assign({}, defaults, this.data)
+    this.data = Object.assign({}, defaults, this.data);
 
     // Persist initial state (ensures defaults are written)
-    this._write()
+    this._write();
   }
 
   private _write() {
     try {
-      writeFileSync(this.file, JSON.stringify(this.data, null, 2), { encoding: 'utf8' })
+      writeFileSync(this.file, JSON.stringify(this.data, null, 2), {
+        encoding: "utf8",
+      });
     } catch (err) {
       // best-effort - ignore write errors
     }
   }
 
   private _resolveKeyPath(key?: string) {
-    if (!key || typeof key !== 'string') return []
-    return key.split('.').filter(Boolean)
+    if (!key || typeof key !== "string") return [];
+    return key.split(".").filter(Boolean);
   }
 
   private _getNested(parts: string[]) {
-    if (!parts.length) return this.data
-    let cur: any = this.data
+    if (!parts.length) return this.data;
+    let cur: any = this.data;
     for (const p of parts) {
-      if (cur == null || typeof cur !== 'object' || !(p in cur)) return undefined
-      cur = cur[p]
+      if (cur == null || typeof cur !== "object" || !(p in cur))
+        return undefined;
+      cur = cur[p];
     }
-    return cur
+    return cur;
   }
 
   private _setNested(parts: string[], value: any) {
     if (!parts.length) {
       // Replace entire store
-      this.data = value
-      return
+      this.data = value;
+      return;
     }
-    let cur: any = this.data
+    let cur: any = this.data;
     for (let i = 0; i < parts.length - 1; i++) {
-      const p = parts[i]
-      if (cur[p] == null || typeof cur[p] !== 'object') cur[p] = {}
-      cur = cur[p]
+      const p = parts[i];
+      if (cur[p] == null || typeof cur[p] !== "object") cur[p] = {};
+      cur = cur[p];
     }
-    cur[parts[parts.length - 1]] = value
+    cur[parts[parts.length - 1]] = value;
   }
 
   /**
@@ -118,10 +121,10 @@ export default class SimpleStore {
    * If the result is undefined, returns `fallback` (if provided).
    */
   get<T = unknown>(key?: string, fallback?: T): T | undefined {
-    if (key === undefined) return (this.data as unknown as T)
-    const parts = this._resolveKeyPath(key)
-    const val = this._getNested(parts)
-    return val === undefined ? fallback : (val as T)
+    if (key === undefined) return this.data as unknown as T;
+    const parts = this._resolveKeyPath(key);
+    const val = this._getNested(parts);
+    return val === undefined ? fallback : (val as T);
   }
 
   /**
@@ -130,47 +133,47 @@ export default class SimpleStore {
    * - `set({ a: 1, b: 2 })` to shallow-merge an object into the store
    */
   set(key: string | Record<string, any>, value?: any) {
-    if (typeof key === 'object' && value === undefined) {
-      Object.assign(this.data, key)
-    } else if (typeof key === 'string') {
-      const parts = this._resolveKeyPath(key)
-      this._setNested(parts, value)
+    if (typeof key === "object" && value === undefined) {
+      Object.assign(this.data, key);
+    } else if (typeof key === "string") {
+      const parts = this._resolveKeyPath(key);
+      this._setNested(parts, value);
     }
-    this._write()
+    this._write();
   }
 
   /** Delete a key (supports dot notation) */
   delete(key: string) {
-    if (typeof key !== 'string') return
-    const parts = this._resolveKeyPath(key)
+    if (typeof key !== "string") return;
+    const parts = this._resolveKeyPath(key);
     if (!parts.length) {
-      this.data = {}
-      this._write()
-      return
+      this.data = {};
+      this._write();
+      return;
     }
-    let cur: any = this.data
+    let cur: any = this.data;
     for (let i = 0; i < parts.length - 1; i++) {
-      const p = parts[i]
-      if (!(p in cur) || cur[p] == null) return
-      cur = cur[p]
+      const p = parts[i];
+      if (!(p in cur) || cur[p] == null) return;
+      cur = cur[p];
     }
-    delete cur[parts[parts.length - 1]]
-    this._write()
+    delete cur[parts[parts.length - 1]];
+    this._write();
   }
 
   /** Clears the entire store */
   clear() {
-    this.data = {}
-    this._write()
+    this.data = {};
+    this._write();
   }
 
   /** Expose file path (useful for tests/debugging) */
   path() {
-    return this.file
+    return this.file;
   }
 
   /** Expose raw store (useful for tests/debugging) */
   store() {
-    return this.data
+    return this.data;
   }
 }

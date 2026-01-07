@@ -1,4 +1,4 @@
-### this is nk4dev modified version.
+### this is nk4dev modified version
 
 ![](https://assets.vercel.com/image/upload/v1549723846/repositories/hyper/hyper-3-repo-banner.png)
 

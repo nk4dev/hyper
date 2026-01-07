@@ -20,7 +20,6 @@ import type { IPty, IWindowsPtyForkOptions, spawn as npSpawn } from "node-pty";
  */
 const getOsLocaleSync = (): string => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mod = require("os-locale");
     // If the module provides a sync() function, use it.
     if (mod && typeof mod.sync === "function") {
@@ -52,7 +51,6 @@ const getOsLocaleSync = (): string => {
  */
 const shellEnvSync = (shell?: string) => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mod = require("shell-env");
     if (mod && typeof mod.sync === "function") {
       try {
@@ -81,7 +79,6 @@ const createNodePtyError = () =>
 
 let spawn: typeof npSpawn;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   spawn = require("node-pty").spawn;
 } catch (err) {
   throw createNodePtyError();
